@@ -1,93 +1,155 @@
 import os
-import json
-import time
-import shutil
-import threading
-import queue
-import tempfile
-from flask import Flask, render_template, request, send_file, Response
-from agent import run_ai_scraper_agent
+import traceback
+from flask import Flask, render_template, request, jsonify
+from agent import DeepScraperAgent
 
 app = Flask(__name__)
 
-# --- VERCEL FIX: Route all file operations to the ephemeral /tmp directory ---
-BASE_DIR = tempfile.gettempdir()
-DATA_DIR = os.path.join(BASE_DIR, 'output_data')
-ZIP_FILE_PATH = os.path.join(BASE_DIR, "final_dataset.zip")
+# GLOBAL STATUS MEMORY
+agent_logs = []
+execution_status = {
+    "running": False,
+    "progress": 0,
+    "message": "Idle"
+}
 
-progress_queue = queue.Queue()
 
-def push_ui_update(step_title, percentage, terminal_log, status="processing"):
-    progress_queue.put({
-        "step": step_title,
-        "percent": percentage,
-        "message": f"[{time.strftime('%H:%M:%S')}] {terminal_log}",
-        "status": status
+def add_log(message):
+    global agent_logs
+
+    print(message)
+
+    agent_logs.append(message)
+
+    # keep console clean-ish
+    if len(agent_logs) > 200:
+        agent_logs = agent_logs[-200:]
+
+
+@app.route("/")
+def home():
+    return render_template("index.html")
+
+
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "online",
+        "service": "AI Deep Scraper Agent"
     })
 
-def execution_thread_worker(city, api_key):
+
+@app.route("/logs")
+def logs():
+    return jsonify({
+        "logs": agent_logs,
+        "progress": execution_status["progress"],
+        "running": execution_status["running"],
+        "message": execution_status["message"]
+    })
+
+
+@app.route("/launch", methods=["POST"])
+def launch_scraper():
+
+    global execution_status
+    global agent_logs
+
+    # RESET
+    agent_logs = []
+
+    execution_status = {
+        "running": True,
+        "progress": 0,
+        "message": "Initializing..."
+    }
+
     try:
-        push_ui_update("Cleaning Workspace", 5, "Initializing temporary folder arrays...")
-        if os.path.exists(DATA_DIR):
-            shutil.rmtree(DATA_DIR)
-        if os.path.exists(ZIP_FILE_PATH):
-            os.remove(ZIP_FILE_PATH)
-        os.makedirs(DATA_DIR, exist_ok=True)
 
-        success = run_ai_scraper_agent(city, api_key, DATA_DIR, push_ui_update)
-        
-        if success:
-            push_ui_update("Packaging Final Dataset", 90, "Compiling multi-relational datasets into standalone zip compression formats...")
-            base_name = ZIP_FILE_PATH.replace('.zip', '')
-            shutil.make_archive(base_name, 'zip', DATA_DIR)
-            push_ui_update("Complete", 100, "[Success] Everything built cleanly! Your download link is ready below.", "completed")
-        else:
-            pass
-            
+        data = request.get_json()
+
+        city = data.get("city", "").strip()
+        api_key = data.get("api_key", "").strip()
+
+        if not city:
+            raise Exception("Target city missing.")
+
+        if not api_key:
+            raise Exception("Gemini API key missing.")
+
+        add_log("[System] Initializing connection stream...")
+        execution_status["progress"] = 10
+
+        add_log("[System] Initializing temporary folder arrays...")
+        execution_status["progress"] = 20
+
+        # CREATE AGENT
+        agent = DeepScraperAgent(
+            api_key=api_key,
+            logger=add_log
+        )
+
+        execution_status["progress"] = 35
+
+        add_log("[System] Linked to Gemini AI. Building targeted logic prompts...")
+
+        # TEST CONNECTION
+        test = agent.test_connection()
+
+        if not test:
+            raise Exception("Gemini API connection failed.")
+
+        execution_status["progress"] = 50
+
+        add_log("[Agent] Gemini API verified.")
+
+        # GENERATE SCRAPING STRATEGY
+        strategy = agent.generate_scraping_strategy(city)
+
+        if not strategy:
+            raise Exception("Gemini returned empty strategy.")
+
+        execution_status["progress"] = 85
+
+        add_log("[Agent] Parsing architecture generated successfully.")
+
+        execution_status["progress"] = 100
+        execution_status["running"] = False
+        execution_status["message"] = "Execution completed."
+
+        add_log("[System] Scraper agent execution completed successfully.")
+
+        return jsonify({
+            "success": True,
+            "strategy": strategy,
+            "logs": agent_logs
+        })
+
     except Exception as e:
-        push_ui_update("System Exception Encountered", 100, f"[Error] Main operational cluster exception occurred: {str(e)}", "failed")
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+        execution_status["running"] = False
+        execution_status["progress"] = 0
+        execution_status["message"] = "Execution Interrupted."
 
-@app.route('/start', methods=['POST'])
-def start_pipeline():
-    city = request.form.get('city')
-    api_key = request.form.get('api_key')
-    
-    if not city or not api_key:
-        return "Missing variables", 400
-        
-    while not progress_queue.empty():
-        try:
-            progress_queue.get_nowait()
-        except queue.Empty:
-            break
+        error_msg = f"[Error] {str(e)}"
 
-    threading.Thread(target=execution_thread_worker, args=(city, api_key)).start()
-    return "Pipeline initialized successfully."
+        add_log(error_msg)
 
-@app.route('/progress')
-def live_progress_stream():
-    def generate_events():
-        while True:
-            try:
-                data = progress_queue.get(timeout=30)
-                yield f"data: {json.dumps(data)}\n\n"
-                if data['status'] in ['completed', 'failed']:
-                    break
-            except queue.Empty:
-                yield f"data: {json.dumps({'message': '[System] Connection heartbeat active...'})}\n\n"
-                
-    return Response(generate_events(), mimetype='text/event-stream')
+        traceback.print_exc()
 
-@app.route('/download')
-def download_dataset():
-    if os.path.exists(ZIP_FILE_PATH):
-        return send_file(ZIP_FILE_PATH, as_attachment=True, download_name="scraped_food_data.zip")
-    return f"Error: Dataset not found at {ZIP_FILE_PATH}. File generation might have failed silently.", 404
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "logs": agent_logs
+        }), 500
+
 
 if __name__ == "__main__":
+
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+        )

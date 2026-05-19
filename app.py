@@ -4,13 +4,14 @@ import time
 import shutil
 import threading
 import queue
+import tempfile
 from flask import Flask, render_template, request, send_file, Response
 from agent import run_ai_scraper_agent
 
 app = Flask(__name__)
 
-# Enforce strict absolute paths so Flask doesn't get lost
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+# --- VERCEL FIX: Route all file operations to the ephemeral /tmp directory ---
+BASE_DIR = tempfile.gettempdir()
 DATA_DIR = os.path.join(BASE_DIR, 'output_data')
 ZIP_FILE_PATH = os.path.join(BASE_DIR, "final_dataset.zip")
 

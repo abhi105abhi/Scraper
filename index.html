@@ -1,0 +1,133 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Deep Scraper Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-2xl w-full bg-gray-800 p-8 rounded-lg shadow-lg border border-gray-700">
+        <h2 class="text-2xl font-bold mb-2 text-center text-emerald-400">AI Deep Scraper Agent</h2>
+        <p class="text-gray-400 text-sm text-center mb-6">Zomato & Swiggy Multi-Dataset Extraction Pipeline</p>
+        
+        <form id="scraper-form" action="/start" method="POST" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1 text-gray-300">Target City</label>
+                    <input type="text" name="city" required placeholder="e.g., Lucknow, Bangalore" 
+                           class="w-full p-2.5 bg-gray-700 rounded border border-gray-600 focus:ring-2 focus:ring-emerald-500 text-white outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1 text-gray-300">Gemini API Key</label>
+                    <input type="password" name="api_key" required placeholder="AIzaSy..." 
+                           class="w-full p-2.5 bg-gray-700 rounded border border-gray-600 focus:ring-2 focus:ring-emerald-500 text-white outline-none">
+                </div>
+            </div>
+            
+            <button type="submit" id="submit-btn" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded transition duration-200">
+                Launch Scraper Agent
+            </button>
+        </form>
+
+        <div id="monitor-box" class="mt-8 space-y-4 hidden">
+            <hr class="border-gray-700">
+            
+            <div class="flex justify-between items-center text-sm font-medium">
+                <span id="current-step" class="text-yellow-400 animate-pulse">Initializing Agent...</span>
+                <span id="progress-percent" class="text-emerald-400">0%</span>
+            </div>
+            <div class="w-full bg-gray-700 rounded-full h-2.5">
+                <div id="progress-bar" class="bg-emerald-500 h-2.5 rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+
+            <div>
+                <label class="block text-xs uppercase tracking-wider text-gray-400 font-bold mb-1">Live Agent Console</label>
+                <div id="terminal" class="w-full h-48 p-3 bg-gray-950 rounded text-xs font-mono border border-gray-800 overflow-y-auto space-y-1 text-gray-300">
+                </div>
+            </div>
+
+            <div id="download-box" class="hidden text-center pt-2">
+                <a href="/download" class="inline-block bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow transition duration-200 transform hover:scale-105">
+                    Download complete_dataset.zip
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('scraper-form');
+        const monitorBox = document.getElementById('monitor-box');
+        const submitBtn = document.getElementById('submit-btn');
+        const terminal = document.getElementById('terminal');
+        const currentStep = document.getElementById('current-step');
+        const progressPercent = document.getElementById('progress-percent');
+        const progressBar = document.getElementById('progress-bar');
+        const downloadBox = document.getElementById('download-box');
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            monitorBox.classList.remove('hidden');
+            downloadBox.classList.add('hidden');
+            terminal.innerHTML = '<div class="text-blue-400">[System] Initializing connection stream...</div>';
+            
+            progressBar.style.width = '0%';
+            progressPercent.innerText = '0%';
+
+            const formData = new FormData(form);
+
+            await fetch('/start', {
+                method: 'POST',
+                body: formData
+            });
+
+            const eventSource = new EventSource('/progress');
+            
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                const logLine = document.createElement('div');
+                logLine.textContent = data.message;
+                if (data.message.includes('[Error]')) logLine.className = 'text-red-400';
+                else if (data.message.includes('[Success]')) logLine.className = 'text-emerald-400';
+                else if (data.message.includes('[Agent]')) logLine.className = 'text-purple-400';
+                terminal.appendChild(logLine);
+                terminal.scrollTop = terminal.scrollHeight;
+
+                if (data.step) currentStep.innerText = data.step;
+                if (data.percent !== undefined) {
+                    progressBar.style.width = `${data.percent}%`;
+                    progressPercent.innerText = `${data.percent}%`;
+                }
+
+                if (data.status === 'completed') {
+                    eventSource.close();
+                    currentStep.innerText = "Task Finished Successfully!";
+                    currentStep.classList.remove('animate-pulse');
+                    currentStep.className = "text-emerald-400 font-bold";
+                    downloadBox.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                } else if (data.status === 'failed') {
+                    eventSource.close();
+                    currentStep.innerText = "Execution Interrupted.";
+                    currentStep.classList.remove('animate-pulse');
+                    currentStep.className = "text-red-400 font-bold";
+                    submitBtn.disabled = false;
+                    submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                }
+            };
+
+            eventSource.onerror = function() {
+                eventSource.close();
+            };
+        });
+    </script>
+</body>
+</html>
+
+```

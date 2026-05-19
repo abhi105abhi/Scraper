@@ -12,7 +12,7 @@ def clean_generated_code(text):
 def run_ai_scraper_agent(city, api_key, output_dir, update_progress):
     try:
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
     except Exception as e:
         update_progress("Authentication Failure.", 0, f"[Error] API Key configuration failed: {str(e)}", "failed")
         return False

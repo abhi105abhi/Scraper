@@ -88,5 +88,6 @@ def download_dataset():
         return send_file(ZIP_FILE_PATH, as_attachment=True, download_name="scraped_food_data.zip")
     return f"Error: Dataset not found at {ZIP_FILE_PATH}. File generation might have failed silently.", 404
 
-if __name__ == '__main__':
-    app.run(debug=False, port=5000)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

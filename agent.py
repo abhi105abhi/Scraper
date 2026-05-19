@@ -1,7 +1,7 @@
 import os
 import re
 import traceback
-import google.generativeai as genai
+from google import genai
 
 def clean_generated_code(text):
     match = re.search(r"```python(.*?)```", text, re.DOTALL)

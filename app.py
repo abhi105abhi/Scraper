@@ -5,8 +5,9 @@ from agent import DeepScraperAgent
 
 app = Flask(__name__)
 
-# GLOBAL STATUS MEMORY
+# GLOBAL STATUS
 agent_logs = []
+
 execution_status = {
     "running": False,
     "progress": 0,
@@ -21,7 +22,6 @@ def add_log(message):
 
     agent_logs.append(message)
 
-    # keep console clean-ish
     if len(agent_logs) > 200:
         agent_logs = agent_logs[-200:]
 
@@ -34,13 +34,22 @@ def home():
 @app.route("/health")
 def health():
     return jsonify({
-        "status": "online",
-        "service": "AI Deep Scraper Agent"
+        "status": "online"
     })
 
 
 @app.route("/logs")
 def logs():
+    return jsonify({
+        "logs": agent_logs,
+        "progress": execution_status["progress"],
+        "running": execution_status["running"],
+        "message": execution_status["message"]
+    })
+
+
+@app.route("/progress")
+def progress():
     return jsonify({
         "logs": agent_logs,
         "progress": execution_status["progress"],
@@ -66,7 +75,11 @@ def launch_scraper():
 
     try:
 
-        data = request.get_json()
+        # SUPPORT JSON + FORM DATA
+        data = request.get_json(silent=True)
+
+        if not data:
+            data = request.form
 
         city = data.get("city", "").strip()
         api_key = data.get("api_key", "").strip()
@@ -83,7 +96,7 @@ def launch_scraper():
         add_log("[System] Initializing temporary folder arrays...")
         execution_status["progress"] = 20
 
-        # CREATE AGENT
+        # INIT AGENT
         agent = DeepScraperAgent(
             api_key=api_key,
             logger=add_log
@@ -93,7 +106,7 @@ def launch_scraper():
 
         add_log("[System] Linked to Gemini AI. Building targeted logic prompts...")
 
-        # TEST CONNECTION
+        # TEST API
         test = agent.test_connection()
 
         if not test:
@@ -103,7 +116,7 @@ def launch_scraper():
 
         add_log("[Agent] Gemini API verified.")
 
-        # GENERATE SCRAPING STRATEGY
+        # GENERATE STRATEGY
         strategy = agent.generate_scraping_strategy(city)
 
         if not strategy:
@@ -152,4 +165,4 @@ if __name__ == "__main__":
         host="0.0.0.0",
         port=port,
         debug=False
-        )
+    )
